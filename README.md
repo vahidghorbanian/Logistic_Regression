@@ -6,3 +6,5 @@ Basically, the linear regression's hypothesis (y = b + a1x1 + a2x2 + ...) is con
 h(X) = 1 / (1+exp(-y)),
 
 where h(X) is a sigmoid function varying from 0 to one in a sinusoidal shape. 
+
+* Logistic regression can work with both continuous and discrete data.
