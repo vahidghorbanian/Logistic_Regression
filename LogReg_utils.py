@@ -1,13 +1,15 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.model_selection import cross_validate, cross_val_predict
 from sklearn.linear_model import LogisticRegression
-from sklearn.datasets import load_breast_cancer
+from sklearn import datasets
 from sklearn import metrics
 import time
 import sys
+
 
 def kfold(X, y, nFold):
     print('K-fold split')
@@ -31,40 +33,7 @@ def kfold(X, y, nFold):
     return X_train, X_test, y_train, y_test
 
 
-def LogReg_BreastCancer(scoring_metric, scoring_attribute, nFold, nRFE, solver, max_iter):
-    # Description of dataset
-    data = load_breast_cancer()
-    data = pd.DataFrame(data=np.append(data['data'], np.transpose([data['target']]), axis=1),
-                        columns=np.append(data['feature_names'], ['target']))
-    print('\n**********************************************************')
-    print('Feature names:\n', list(data.columns[0:len(data.columns)-1]))
-    print('\nTarget name:\n', data.columns[len(data.columns)-1])
-    print('\n**********************************************************')
-    print('Data type:\n', data.dtypes)
-    print('\n**********************************************************')
-    print('Unique values of output:\n', np.unique(data['target']))
-    if len(np.unique(data['target'])) == 2:
-        print('This is a binary classification problem!')
-        nonZero = np.count_nonzero(data['target'])
-        print('Percentage of nonzero target values:', nonZero*100/len(data['target']))
-        print('Percentage of zero target values:', (len(data['target'])-nonZero) * 100 / len(data['target']))
-        if (nonZero*100/len(data['target'])) != 50:
-            print('The data set is unbalanced!')
-    else:
-        print('This is a multi-class classification problem!')
-
-    # Data statistics
-    print('\n**********************************************************')
-    print('Data statistics')
-    print(data.describe())
-
-    # Correlation of input features
-    X = data.loc[:, data.columns != 'target']
-    y = data.loc[:, data.columns == 'target']
-    corrMatrix = X.corr(method='pearson')
-    # sns.heatmap(corrMatrix.corr(method='pearson'))
-
-    # region Description (Recursive Feature Elimination)
+def RFE(X, y, nRFE, solver, max_iter):
     print('\n**********************************************************')
     print('Recursive Feature Elimination')
     nFeature = nRFE
@@ -103,59 +72,102 @@ def LogReg_BreastCancer(scoring_metric, scoring_attribute, nFold, nRFE, solver, 
     X_RFE_test  = X_test
     y_RFE_train = y_train
     y_RFE_test  = y_test
-    # endregion\
+    return X_RFE_train, X_RFE_test, y_RFE_train, y_RFE_test
 
-    # region Description (Cross validation)
+
+def crossvalidate_usinglibrary(X, y, score_metric, score_attribute, score_average,nFold, solver, max_iter):
     print('\n**********************************************************')
-
-    # Using libraries
-    print('Cross validation using python libraries')
     print('Number of folds', nFold)
-    model = LogisticRegression(max_iter=max_iter, solver=solver)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+    model = LogisticRegression(max_iter=max_iter, solver=solver,multi_class='auto')
     y_pred = cross_val_predict(model, X_test, np.ravel(y_test), cv=nFold)
-    cv_results = cross_validate(model, X, np.ravel(y), cv=nFold, return_train_score=True, scoring=scoring_metric)
-    print('Selected scoring metric: {', scoring_metric, '}')
+    cv_results = cross_validate(model, X, np.ravel(y), cv=nFold, return_train_score=True, scoring='f1_macro')
+    confusionmatrix = metrics.confusion_matrix(y_test, y_pred)
+    classificationreport = metrics.classification_report(y_test, y_pred)
+    print('Selected scoring metric: {', score_metric, '}')
     print('Fit time:', cv_results['fit_time'])
     print('Score time:', cv_results['score_time'])
     print('Test score:', cv_results['test_score'])
     print('Train score:', cv_results['train_score'])
     print('test score (mean)', cv_results['test_score'].mean())
     print('test score (std)', cv_results['test_score'].std())
-    print('confusion matrix:', metrics.confusion_matrix(y_test, y_pred))
+    print('confusion matrix:', confusionmatrix)
+    print('classification report:', classificationreport)
+    return cv_results, confusionmatrix, classificationreport
 
-    # My own way
-    print('\nCross validation my own way')
+
+def crossvalidation_myway(X, y, scoring_attribute, nFold, solver, max_iter):
+    print('\n**********************************************************')
+    print('Cross validation my own way')
+    print('The associated attribute names in python under "metrics" are:\n'
+          '{accuracy_score,', 'balanced_accuracy_score,', 'average_precision_score,', 'brier_score_loss,\n',
+          'f1_score,', 'f1_score,', 'f1_score,', 'f1_score,', 'f1_score,', 'log_loss,\n',
+          'precision_score,', 'recall_score,', 'jaccard_score,', 'roc_auc_score}')
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     X_train_kfold, X_test_kfold, y_train_kfold, y_test_kfold = kfold(X, y, nFold) # k-fold split
-    test_score = []
-    train_score = []
-    models_kfold = {}
-    models_kfold['test_score'] = []
-    models_kfold['train_score'] = []
-    models_kfold['fit_time'] = []
-    models_kfold['y_pred'] = list()
+    cv_results = {}
+    cv_results['test_score'] = []
+    cv_results['train_score'] = []
+    cv_results['fit_time'] = []
+    cv_results['y_pred'] = list()
     for i in np.arange(1, nFold+1, 1):
         model = LogisticRegression(max_iter=max_iter, solver=solver)
         t = time.time()
-        models_kfold['f'+str(i)] = model.fit(X_train_kfold['f'+str(i)], np.ravel(y_train_kfold['f'+str(i)]))
-        models_kfold['fit_time'] = np.append(models_kfold['fit_time'], time.time() - t)
-        models_kfold['y_pred'].append(models_kfold['f' + str(i)].predict(X_test_kfold['f' + str(i)]))
-        models_kfold['test_score'] = np.append(models_kfold['test_score'],
-                               getattr(metrics, scoring_attribute)(y_test_kfold['f'+str(i)], models_kfold['y_pred'][i-1]))
-        models_kfold['train_score'] = np.append(models_kfold['train_score'],
+        cv_results['f'+str(i)] = model.fit(X_train_kfold['f'+str(i)], np.ravel(y_train_kfold['f'+str(i)]))
+        cv_results['fit_time'] = np.append(cv_results['fit_time'], time.time() - t)
+        cv_results['y_pred'].append(cv_results['f' + str(i)].predict(X_test_kfold['f' + str(i)]))
+        cv_results['test_score'] = np.append(cv_results['test_score'],
+                               getattr(metrics, scoring_attribute)(y_test_kfold['f'+str(i)], cv_results['y_pred'][i-1]))
+        cv_results['train_score'] = np.append(cv_results['train_score'],
                                 getattr(metrics, scoring_attribute)(y_train_kfold['f'+str(i)],
-                                                                    models_kfold['f'+str(i)].predict(X_train_kfold['f'+str(i)])))
-    print('Fit time:', models_kfold['fit_time'])
-    print('Test score:', models_kfold['test_score'])
-    print('Train score:', models_kfold['train_score'])
-    print('test score (mean)', models_kfold['test_score'].mean())
-    print('test score (std)', models_kfold['test_score'].std())
-    print('confusion matrix:', metrics.confusion_matrix(y_test, models_kfold['f' + str(np.argmax(models_kfold['test_score']))].predict(X_test)))
-    # endregion
+                                                                    cv_results['f'+str(i)].predict(X_train_kfold['f'+str(i)])))
+    print('Fit time:', cv_results['fit_time'])
+    print('Test score:', cv_results['test_score'])
+    print('Train score:', cv_results['train_score'])
+    print('test score (mean)', cv_results['test_score'].mean())
+    print('test score (std)', cv_results['test_score'].std())
+    confusionmatrix = metrics.confusion_matrix(y_test, cv_results['f' + str(np.argmax(cv_results['test_score'])+1)].predict(X_test))
+    print('confusion matrix:', confusionmatrix)
+    return cv_results, confusionmatrix
 
 
-
-
+def data_prep(data):
+    # data = datasets.load_breast_cancer()
+    data = pd.DataFrame(data=np.append(data['data'], np.transpose([data['target']]), axis=1),
+                        columns=np.append(data['feature_names'], ['target']))
+    print('\n**********************************************************')
+    print('Feature names:\n', list(data.columns[0:len(data.columns)-1]))
+    print('\nTarget name:\n', data.columns[len(data.columns)-1])
+    print('\n**********************************************************')
+    print('Data type:\n', data.dtypes)
+    print('\n**********************************************************')
+    print('Unique values of output:\n', np.unique(data['target']))
+    if len(np.unique(data['target'])) == 2:
+        print('This is a binary classification problem!')
+        type = 'binary'
+        nonZero = np.count_nonzero(data['target'])
+        print('Percentage of nonzero target values:', nonZero*100/len(data['target']))
+        print('Percentage of zero target values:', (len(data['target'])-nonZero) * 100 / len(data['target']))
+        if (nonZero*100/len(data['target'])) != 50:
+            print('The data set is unbalanced!')
+    else:
+        print('This is a multi-class classification problem!')
+        type = 'multiclass'
+    # Data statistics
+    print('\n**********************************************************')
+    print('Data statistics')
+    print(data.describe())
+    # Correlation of input features
+    X = data.loc[:, data.columns != 'target']
+    y = data.loc[:, data.columns == 'target']
+    corrMatrix = X.corr(method='pearson')
+    mask = np.zeros_like(corrMatrix, dtype=np.bool)
+    mask[np.triu_indices_from(mask)] = True
+    cmap = sns.diverging_palette(220, 10, as_cmap=True)
+    sns.heatmap(corrMatrix, mask=mask, cmap=cmap, vmax=.3, center=0,
+                square=True, linewidths=.5, cbar_kws={"shrink": .5})
+    # plt.show()
+    return X, y, type
 
 
 
