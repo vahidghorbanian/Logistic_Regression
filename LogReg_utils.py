@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.model_selection import cross_validate, cross_val_predict
+from sklearn.model_selection import cross_validate, cross_val_predict, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn import datasets
 from sklearn import metrics
@@ -75,34 +75,39 @@ def RFE(X, y, nRFE, solver, max_iter):
     return X_RFE_train, X_RFE_test, y_RFE_train, y_RFE_test
 
 
-def crossvalidate_usinglibrary(X, y, score_metric, score_attribute, score_average,nFold, solver, max_iter):
+def crossvalidate_usinglibrary(X, y, nFold, solver, max_iter, scoring_metric, penalty, cv):
     print('\n**********************************************************')
     print('Number of folds', nFold)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
-    model = LogisticRegression(max_iter=max_iter, solver=solver,multi_class='auto')
-    y_pred = cross_val_predict(model, X_test, np.ravel(y_test), cv=nFold)
-    cv_results = cross_validate(model, X, np.ravel(y), cv=nFold, return_train_score=True, scoring='f1_macro')
+    C = [0.1, 1, 5, 10, 50, 100]
+    tuned_parameters = {'C': C}
+    if cv == True:
+        model = LogisticRegression(max_iter=max_iter, solver=solver, multi_class='auto', random_state=0,
+                                   penalty=penalty)
+        clf = GridSearchCV(model, tuned_parameters, cv=nFold, refit=True, return_train_score=False, scoring=scoring_metric)
+        models = clf.fit(X_train, np.ravel(y_train))
+        best_model = models.best_estimator_
+    else:
+        score = 0
+        for i in np.arange(0, len(C), 1):
+            model = LogisticRegression(max_iter=max_iter, solver=solver, multi_class='auto', random_state=0,
+                                       penalty=penalty, C=C[i])
+            model.fit(X_train, np.ravel(y_train))
+            if model.score(X_train, np.ravel(y_train)) > score:
+                score = model.score(X_train, np.ravel(y_train))
+                best_model = model
+    y_pred = best_model.predict(X_test)
     confusionmatrix = metrics.confusion_matrix(y_test, y_pred)
     classificationreport = metrics.classification_report(y_test, y_pred)
-    print('Selected scoring metric: {', score_metric, '}')
-    print('Fit time:', cv_results['fit_time'])
-    print('Score time:', cv_results['score_time'])
-    print('Test score:', cv_results['test_score'])
-    print('Train score:', cv_results['train_score'])
-    print('test score (mean)', cv_results['test_score'].mean())
-    print('test score (std)', cv_results['test_score'].std())
+    # print('\n', models.cv_results_, '\n')
     print('confusion matrix:', confusionmatrix)
     print('classification report:', classificationreport)
-    return cv_results, confusionmatrix, classificationreport
+    return confusionmatrix, classificationreport, best_model
 
 
 def crossvalidation_myway(X, y, scoring_attribute, nFold, solver, max_iter):
     print('\n**********************************************************')
     print('Cross validation my own way')
-    print('The associated attribute names in python under "metrics" are:\n'
-          '{accuracy_score,', 'balanced_accuracy_score,', 'average_precision_score,', 'brier_score_loss,\n',
-          'f1_score,', 'f1_score,', 'f1_score,', 'f1_score,', 'f1_score,', 'log_loss,\n',
-          'precision_score,', 'recall_score,', 'jaccard_score,', 'roc_auc_score}')
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
     X_train_kfold, X_test_kfold, y_train_kfold, y_test_kfold = kfold(X, y, nFold) # k-fold split
     cv_results = {}
